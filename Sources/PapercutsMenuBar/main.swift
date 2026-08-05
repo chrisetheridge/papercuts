@@ -186,6 +186,7 @@ enum TerminalLauncher {
 struct PapercutPopover: View {
     @ObservedObject var model: PapercutsModel
     @State private var selectedID: UUID?
+    @State private var collapsedRepositories: Set<String> = []
     private let terminals = TerminalLauncher.installed()
 
     var body: some View {
@@ -208,27 +209,59 @@ struct PapercutPopover: View {
                 } else {
                     ScrollView {
                         LazyVStack(spacing: 0) {
-                            ForEach(model.cuts) { cut in
-                                PapercutRow(
-                                    cut: cut,
-                                    isExpanded: selectedID == cut.id,
-                                onToggle: {
-                                        withAnimation(.spring(response: 0.22, dampingFraction: 1)) {
-                                            selectedID = selectedID == cut.id ? nil : cut.id
+                            ForEach(groupedCuts, id: \.repository) { group in
+                                VStack(alignment: .leading, spacing: 0) {
+                                    Button {
+                                        withAnimation(.easeOut(duration: 0.15)) {
+                                            if collapsedRepositories.contains(group.repository) {
+                                                collapsedRepositories.remove(group.repository)
+                                            } else {
+                                                collapsedRepositories.insert(group.repository)
+                                            }
                                         }
-                                        if !cut.isRead { model.setRead(true, for: cut) }
-                                },
-                                onMarkUnread: { model.setRead(false, for: cut) },
-                                onCopy: { model.copyPrompt(for: cut) },
-                                onDelete: {
-                                    if selectedID == cut.id { selectedID = nil }
-                                    model.delete(cut)
-                                },
-                                onOpenInTerminal: { terminal in
-                                    TerminalLauncher.open(terminal, at: cut.repositoryPath)
-                                },
-                                terminals: terminals
-                            )
+                                    } label: {
+                                        HStack(spacing: 6) {
+                                            Text(group.repository)
+                                                .font(.system(size: 10, weight: .semibold))
+                                                .tracking(0.7)
+                                                .foregroundStyle(PapercutTheme.secondary)
+                                            Spacer(minLength: 0)
+                                            Image(systemName: collapsedRepositories.contains(group.repository) ? "chevron.right" : "chevron.down")
+                                                .font(.system(size: 9, weight: .semibold))
+                                                .foregroundStyle(PapercutTheme.muted)
+                                        }
+                                        .padding(.horizontal, 7)
+                                        .padding(.top, 13)
+                                        .padding(.bottom, 6)
+                                        .contentShape(Rectangle())
+                                    }
+                                    .buttonStyle(.plain)
+
+                                    if !collapsedRepositories.contains(group.repository) {
+                                        ForEach(group.cuts) { cut in
+                                            PapercutRow(
+                                                cut: cut,
+                                                isExpanded: selectedID == cut.id,
+                                                onToggle: {
+                                                    withAnimation(.spring(response: 0.22, dampingFraction: 1)) {
+                                                        selectedID = selectedID == cut.id ? nil : cut.id
+                                                    }
+                                                    if !cut.isRead { model.setRead(true, for: cut) }
+                                                },
+                                                onMarkUnread: { model.setRead(false, for: cut) },
+                                                onCopy: { model.copyPrompt(for: cut) },
+                                                onDelete: {
+                                                    if selectedID == cut.id { selectedID = nil }
+                                                    model.delete(cut)
+                                                },
+                                                onOpenInTerminal: { terminal in
+                                                    TerminalLauncher.open(terminal, at: cut.repositoryPath)
+                                                },
+                                                terminals: terminals
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
                         .padding(.horizontal, 10)
@@ -240,6 +273,12 @@ struct PapercutPopover: View {
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .shadow(color: .black.opacity(0.42), radius: 24, y: 12)
         .preferredColorScheme(.dark)
+    }
+
+    private var groupedCuts: [(repository: String, cuts: [Papercut])] {
+        Dictionary(grouping: model.cuts, by: \.repository)
+            .map { (repository: $0.key, cuts: $0.value) }
+            .sorted { $0.cuts[0].createdAt > $1.cuts[0].createdAt }
     }
 
     private var header: some View {
