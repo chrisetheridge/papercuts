@@ -19,7 +19,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var panel: NSPanel!
     private var socketServer: PapercutsSocketServer!
     private var globalMouseMonitor: Any?
-    private let panelSize = NSSize(width: 410, height: 560)
+    private let panelWidth: CGFloat = 410
+    private let maximumPanelHeight: CGFloat = 560
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApplication.shared.setActivationPolicy(.accessory)
@@ -38,7 +39,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         socketServer = PapercutsSocketServer(model: model)
 
         panel = NSPanel(
-            contentRect: NSRect(origin: .zero, size: panelSize),
+            contentRect: NSRect(origin: .zero, size: preferredPanelSize),
             styleMask: [.borderless, .nonactivatingPanel, .hudWindow],
             backing: .buffered,
             defer: true
@@ -90,6 +91,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if panel.isVisible {
             panel.orderOut(nil)
         } else {
+            let panelSize = preferredPanelSize
             let anchorRect = button.convert(button.bounds, to: nil)
             guard let screenRect = button.window?.convertToScreen(anchorRect) else { return }
             let origin = NSPoint(
@@ -99,6 +101,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             panel.setFrame(NSRect(origin: origin, size: panelSize), display: false)
             panel.orderFrontRegardless()
         }
+    }
+
+    private var preferredPanelSize: NSSize {
+        let estimatedHeight = 155 + CGFloat(model.cuts.count) * 72
+        return NSSize(width: panelWidth, height: min(maximumPanelHeight, max(320, estimatedHeight)))
     }
 
     private var statusItemFrame: NSRect {
@@ -486,7 +493,7 @@ struct PapercutPopover: View {
 
     var body: some View {
         ZStack {
-            PapercutVisualEffect(material: .hudWindow)
+            PapercutTheme.panel
                 .ignoresSafeArea()
 
             VStack(alignment: .leading, spacing: 0) {
@@ -514,10 +521,18 @@ struct PapercutPopover: View {
                                         }
                                     } label: {
                                         HStack(spacing: 6) {
+                                            Image(systemName: "folder")
+                                                .font(.system(size: 9, weight: .semibold))
+                                                .foregroundStyle(PapercutTheme.muted)
                                             Text(group.repository)
                                                 .font(.system(size: 10, weight: .semibold))
-                                                .tracking(0.7)
+                                                .tracking(0.4)
                                                 .foregroundStyle(PapercutTheme.secondary)
+                                                .lineLimit(1)
+                                                .truncationMode(.middle)
+                                            Text("\(group.cuts.count)")
+                                                .font(.system(size: 9, weight: .medium, design: .monospaced))
+                                                .foregroundStyle(PapercutTheme.muted)
                                             Spacer(minLength: 0)
                                             Image(systemName: collapsedRepositories.contains(group.repository) ? "chevron.right" : "chevron.down")
                                                 .font(.system(size: 9, weight: .semibold))
@@ -531,27 +546,29 @@ struct PapercutPopover: View {
                                     .buttonStyle(.plain)
 
                                     if !collapsedRepositories.contains(group.repository) {
-                                        ForEach(group.cuts) { cut in
-                                            PapercutRow(
-                                                cut: cut,
-                                                isExpanded: selectedID == cut.id,
-                                                onToggle: {
-                                                    withAnimation(.spring(response: 0.22, dampingFraction: 1)) {
-                                                        selectedID = selectedID == cut.id ? nil : cut.id
-                                                    }
-                                                    if !cut.isRead { model.setRead(true, for: cut) }
-                                                },
-                                                onMarkUnread: { model.setRead(false, for: cut) },
-                                                onCopy: { model.copyPrompt(for: cut) },
-                                                onDelete: {
-                                                    if selectedID == cut.id { selectedID = nil }
-                                                    model.delete(cut)
-                                                },
-                                                onOpenInTerminal: { terminal in
-                                                    TerminalLauncher.open(terminal, at: cut.repositoryPath)
-                                                },
-                                                terminals: terminals
-                                            )
+                                        VStack(spacing: 4) {
+                                            ForEach(group.cuts) { cut in
+                                                PapercutRow(
+                                                    cut: cut,
+                                                    isExpanded: selectedID == cut.id,
+                                                    onToggle: {
+                                                        withAnimation(.spring(response: 0.22, dampingFraction: 1)) {
+                                                            selectedID = selectedID == cut.id ? nil : cut.id
+                                                        }
+                                                        if !cut.isRead { model.setRead(true, for: cut) }
+                                                    },
+                                                    onMarkUnread: { model.setRead(false, for: cut) },
+                                                    onCopy: { model.copyPrompt(for: cut) },
+                                                    onDelete: {
+                                                        if selectedID == cut.id { selectedID = nil }
+                                                        model.delete(cut)
+                                                    },
+                                                    onOpenInTerminal: { terminal in
+                                                        TerminalLauncher.open(terminal, at: cut.repositoryPath)
+                                                    },
+                                                    terminals: terminals
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -576,6 +593,10 @@ struct PapercutPopover: View {
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(PapercutTheme.borderStrong.opacity(0.8), lineWidth: 1)
+        }
         .shadow(color: .black.opacity(0.42), radius: 24, y: 12)
         .preferredColorScheme(.dark)
     }
@@ -649,22 +670,6 @@ struct EmptyStateView: View {
     }
 }
 
-private struct PapercutVisualEffect: NSViewRepresentable {
-    let material: NSVisualEffectView.Material
-
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let view = NSVisualEffectView()
-        view.material = material
-        view.blendingMode = .behindWindow
-        view.state = .active
-        return view
-    }
-
-    func updateNSView(_ view: NSVisualEffectView, context: Context) {
-        view.material = material
-    }
-}
-
 struct PapercutRow: View {
     let cut: Papercut
     let isExpanded: Bool
@@ -683,7 +688,7 @@ struct PapercutRow: View {
             Button(action: onToggle) {
                 HStack(alignment: .top, spacing: 9) {
                     Circle()
-                        .fill(cut.isRead ? PapercutTheme.muted : PapercutTheme.primary)
+                        .fill(cut.isRead ? PapercutTheme.muted : PapercutTheme.unread)
                         .frame(width: 6, height: 6)
                         .padding(.top, 4)
 
@@ -694,8 +699,6 @@ struct PapercutRow: View {
                             .multilineTextAlignment(.leading)
 
                         HStack(spacing: 6) {
-                            Text(cut.repository)
-                            Text("·")
                             Text(cut.branch)
                             if let model = cut.model, !model.isEmpty {
                                 Text("·")
@@ -766,7 +769,7 @@ struct PapercutRow: View {
         .padding(.vertical, 11)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(isExpanded ? PapercutTheme.surface : (isHovering ? PapercutTheme.hover : .clear))
+                .fill(isExpanded ? PapercutTheme.surface : (isHovering ? PapercutTheme.hover : PapercutTheme.row))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -827,14 +830,17 @@ struct PapercutRow: View {
 }
 
 private enum PapercutTheme {
-    static let background = Color(red: 0.0, green: 0.0, blue: 0.0)
-    static let surface = Color(red: 0.039, green: 0.039, blue: 0.039)
-    static let hover = Color(red: 0.067, green: 0.067, blue: 0.067)
-    static let border = Color(red: 0.13, green: 0.13, blue: 0.13)
-    static let borderStrong = Color(red: 0.22, green: 0.22, blue: 0.22)
+    static let panel = Color(white: 0.055)
+    static let background = Color(white: 0.025)
+    static let surface = Color(white: 0.09)
+    static let row = Color.white.opacity(0.035)
+    static let hover = Color.white.opacity(0.075)
+    static let border = Color.white.opacity(0.12)
+    static let borderStrong = Color.white.opacity(0.22)
     static let primary = Color(red: 0.96, green: 0.96, blue: 0.96)
-    static let secondary = Color(red: 0.55, green: 0.55, blue: 0.58)
-    static let muted = Color(red: 0.32, green: 0.32, blue: 0.35)
+    static let secondary = Color.white.opacity(0.64)
+    static let muted = Color.white.opacity(0.40)
+    static let unread = Color(red: 0.82, green: 0.32, blue: 0.23)
 }
 
 private func relativeAge(_ date: Date) -> String {
