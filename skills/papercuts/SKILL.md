@@ -1,6 +1,6 @@
 ---
 name: papercuts
-description: Record small workflow, quality, or speed issues discovered while working in a Git repository.
+description: Use when writing code or implementing features. .Record small workflow, quality, or speed issues discovered while working in a Git repository.
 ---
 
 # Papercuts

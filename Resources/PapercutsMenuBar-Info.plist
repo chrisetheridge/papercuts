@@ -6,6 +6,10 @@
 	<string>Papercuts</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.papercuts.app</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1.0</string>
+	<key>CFBundleVersion</key>
+	<string>0.1.0</string>
 	<key>CFBundleName</key>
 	<string>Papercuts</string>
 	<key>CFBundlePackageType</key>
