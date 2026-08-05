@@ -66,13 +66,25 @@ public struct RepositoryContext: Sendable {
         let rootPath = runGit(["-C", directoryPath, "rev-parse", "--show-toplevel"])
             ?? directoryPath
         let rootURL = URL(fileURLWithPath: rootPath).standardizedFileURL
-        let repository = rootURL.lastPathComponent.isEmpty ? rootURL.path : rootURL.lastPathComponent
+        let fallbackRepository = rootURL.lastPathComponent.isEmpty ? rootURL.path : rootURL.lastPathComponent
+        let repository = runGit(["-C", rootURL.path, "config", "--get", "remote.origin.url"])
+            .map { repositoryName(from: $0, fallback: fallbackRepository) }
+            ?? fallbackRepository
         let branch = runGit(["-C", rootURL.path, "branch", "--show-current"])
             .flatMap { $0.isEmpty ? nil : $0 }
             ?? runGit(["-C", rootURL.path, "rev-parse", "--short", "HEAD"]).map { "detached @ \($0)" }
             ?? "No Git branch"
 
         return Self(repository: repository, repositoryPath: rootURL.path, branch: branch)
+    }
+
+    private static func repositoryName(from remote: String, fallback: String) -> String {
+        let component = remote.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            .split(separator: "/")
+            .last
+            .map(String.init) ?? ""
+        let name = component.hasSuffix(".git") ? String(component.dropLast(4)) : component
+        return name.isEmpty ? fallback : name
     }
 
     private static func runGit(_ arguments: [String]) -> String? {

@@ -561,6 +561,18 @@ struct PapercutPopover: View {
                     }
                     .scrollIndicators(.hidden)
                 }
+
+                Rectangle()
+                    .fill(PapercutTheme.border.opacity(0.9))
+                    .frame(height: 1)
+                HStack {
+                    Spacer()
+                    Text("v\(appVersion)")
+                        .font(.system(size: 9))
+                        .foregroundStyle(PapercutTheme.muted)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 7)
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -572,6 +584,10 @@ struct PapercutPopover: View {
         Dictionary(grouping: model.cuts, by: \.repository)
             .map { (repository: $0.key, cuts: $0.value) }
             .sorted { $0.cuts[0].createdAt > $1.cuts[0].createdAt }
+    }
+
+    private var appVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
     }
 
     private var header: some View {

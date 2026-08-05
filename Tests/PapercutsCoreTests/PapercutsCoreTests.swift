@@ -2,6 +2,27 @@ import Foundation
 import Testing
 @testable import PapercutsCore
 
+private func runGit(_ arguments: [String]) throws {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+    process.arguments = arguments
+    process.standardOutput = FileHandle.nullDevice
+    process.standardError = FileHandle.nullDevice
+    try process.run()
+    process.waitUntilExit()
+    #expect(process.terminationStatus == 0)
+}
+
+@Test func repositoryNameUsesGitRemote() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    try runGit(["-C", directory.path, "init", "-q"])
+    try runGit(["-C", directory.path, "remote", "add", "origin", "git@github.com:example/actual-repository.git"])
+
+    #expect(RepositoryContext.detect(at: directory).repository == "actual-repository")
+}
+
 @Test func storeAddsAndSortsPapercuts() throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     let store = PapercutStore(directoryURL: directory)
