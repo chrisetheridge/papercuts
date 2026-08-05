@@ -34,8 +34,20 @@ jobs:
       - name: Build app
         run: scripts/build-app.sh
 
-      - name: Package app
-        run: ditto -c -k --sequesterRsrc --keepParent .build/Papercuts.app "Papercuts-${{ steps.version.outputs.version }}-macos.zip"
+      - name: Build CLI
+        run: swift build -c release --product papercut
+
+      - name: Package app, CLI, and skill
+        run: |
+          release_dir=".build/Papercuts-${{ steps.version.outputs.version }}-macos"
+          rm -rf "$release_dir"
+          mkdir -p "$release_dir"
+          cp -R .build/Papercuts.app "$release_dir/"
+          cp .build/release/papercut "$release_dir/"
+          cp -R skills "$release_dir/"
+          mkdir -p "$release_dir/scripts"
+          cp scripts/install.sh "$release_dir/scripts/"
+          ditto -c -k --sequesterRsrc --keepParent "$release_dir" "Papercuts-${{ steps.version.outputs.version }}-macos.zip"
 
       - name: Commit version
         env:

@@ -15,7 +15,8 @@ struct PapercutsMenuBarApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let model = PapercutsModel()
     private var statusItem: NSStatusItem!
-    private var popover: NSPopover!
+    private var panel: NSPanel!
+    private let panelSize = NSSize(width: 410, height: 560)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApplication.shared.setActivationPolicy(.accessory)
@@ -32,34 +33,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.onChange = { [weak self] in self?.updateStatusItem() }
         updateStatusItem()
 
-        popover = NSPopover()
-        popover.behavior = .transient
-        popover.appearance = NSAppearance(named: .darkAqua)
-        popover.contentSize = NSSize(width: 410, height: 560)
-        popover.contentViewController = NSHostingController(rootView: PapercutPopover(model: model))
-        popover.contentViewController?.view.wantsLayer = true
-        popover.contentViewController?.view.layer?.backgroundColor = NSColor.clear.cgColor
+        panel = NSPanel(
+            contentRect: NSRect(origin: .zero, size: panelSize),
+            styleMask: [.borderless, .nonactivatingPanel, .hudWindow],
+            backing: .buffered,
+            defer: true
+        )
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.appearance = NSAppearance(named: .darkAqua)
+        panel.hasShadow = true
+        panel.level = .statusBar
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.contentViewController = NSHostingController(rootView: PapercutPopover(model: model))
+        panel.contentView?.wantsLayer = true
+        panel.contentView?.layer?.backgroundColor = NSColor.clear.cgColor
+        panel.contentView?.layer?.cornerRadius = 14
+        panel.contentView?.layer?.masksToBounds = true
     }
 
     @objc private func statusItemClicked(_ sender: NSStatusBarButton) {
         guard let event = NSApp.currentEvent else {
-            togglePopover()
+            togglePanel()
             return
         }
 
         if event.type == .rightMouseUp {
             showContextMenu(for: sender, event: event)
         } else {
-            togglePopover()
+            togglePanel()
         }
     }
 
-    private func togglePopover() {
+    private func togglePanel() {
         guard let button = statusItem.button else { return }
-        if popover.isShown {
-            popover.performClose(nil)
+        if panel.isVisible {
+            panel.orderOut(nil)
         } else {
-            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+            let anchorRect = button.convert(button.bounds, to: nil)
+            guard let screenRect = button.window?.convertToScreen(anchorRect) else { return }
+            let origin = NSPoint(
+                x: screenRect.midX - panelSize.width / 2,
+                y: screenRect.minY - panelSize.height - 8
+            )
+            panel.setFrame(NSRect(origin: origin, size: panelSize), display: false)
+            panel.orderFrontRegardless()
         }
     }
 
@@ -192,8 +210,6 @@ struct PapercutPopover: View {
     var body: some View {
         ZStack {
             PapercutVisualEffect(material: .hudWindow)
-                .ignoresSafeArea()
-            Color.black.opacity(0.42)
                 .ignoresSafeArea()
 
             VStack(alignment: .leading, spacing: 0) {

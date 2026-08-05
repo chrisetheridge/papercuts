@@ -4,16 +4,48 @@
   </p>
   <h1>Papercuts</h1>
   <p><strong>Small fixes for better agents.</strong></p>
-  <p>A macOS menubar utility for capturing the small workflow frictions discovered by coding agents—then keeping them visible until someone fixes them.</p>
+  <p>A macOS menubar utility for capturing the small workflow frictions discovered by coding agents.</p>
 </div>
 
-## How it works
+## 1. Install the agent skill and CLI
 
-1. An agent finds a small friction and logs it with the CLI.
-2. Papercuts records the repository, branch, model, context, and suggested fix.
-3. You review the list from the menubar and copy a complete fix prompt when ready.
+From a source checkout, run:
 
-## Capture a papercut
+```sh
+scripts/install.sh
+```
+
+From a downloaded release, run the same command from the unzipped release directory:
+
+```sh
+cd Papercuts-<version>-macos
+scripts/install.sh
+```
+
+The installer puts `papercut` in `/usr/local/bin` and links the skill into `~/.agents/skills`. It may ask for your administrator password.
+
+## 2. Get Papercuts
+
+Choose one option. Papercuts requires macOS 13 or later.
+
+### Use the latest release
+
+[Download the latest macOS release](https://github.com/chrisetheridge/papercuts/releases/latest), unzip it, run the installer from step 1, and open `Papercuts.app`. The app opens in the menubar.
+
+### Build from source
+
+From the repository root, run:
+
+```sh
+swift test
+scripts/run-app.sh
+```
+
+The script builds and launches the app. Leave it running while you work.
+
+## 3. Record a papercut
+
+When an agent finds a small workflow or quality issue, run this from the affected repository:
 
 ```sh
 papercut add \
@@ -24,24 +56,10 @@ papercut add \
   --prompt "How to fix it"
 ```
 
-The repository and current Git branch are detected automatically.
+Papercuts detects the repository and current Git branch automatically. Use `--repo <path>` to record an issue for another repository.
 
-## Install the agent skill
+## 4. Review the list
 
-From the repository root, symlink the skill into your global agent skills directory:
+Click the scissors icon in the menubar. Papercuts groups entries by repository. Click a repository header to expand or collapse its entries, then click a papercut to read the details and copy its prompt.
 
-```sh
-mkdir -p ~/.agents/skills
-ln -s "$PWD/skills/papercuts" ~/.agents/skills/papercuts
-```
-
-The symlink keeps the global skill updated as the repository changes.
-
-## Build
-
-```sh
-swift test
-swift build -c release
-scripts/build-app.sh
-scripts/run-app.sh
-```
+Right-click an entry to open its repository in a detected terminal app or delete it after the issue is fixed.
