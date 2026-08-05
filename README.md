@@ -7,7 +7,7 @@
   <p>A macOS menubar utility for capturing the small workflow frictions discovered by coding agents.</p>
 </div>
 
-## 1. Install the agent skill
+## Install the agent skill
 
 From a source checkout, run:
 
@@ -24,7 +24,7 @@ scripts/install.sh
 
 The installer copies the app to `~/Applications`, links the skill into `~/.agents/skills`, and installs the CLI at `~/.local/bin/papercuts`.
 
-## 2. Get Papercuts
+## Get Papercuts
 
 Choose one option. Papercuts requires macOS 13 or later.
 
@@ -43,7 +43,7 @@ scripts/run-app.sh
 
 The script builds and launches the app. Leave it running while you work.
 
-## 3. Record a papercut
+## Record a papercut
 
 When an agent finds a small workflow or quality issue, it checks existing entries with the CLI before adding a new one:
 
@@ -55,8 +55,13 @@ The CLI supports `list` for duplicate checks, `add` for new papercuts, and `edit
 
 If `~/.local/bin` is not on `PATH`, agents can invoke the CLI with its absolute path: `~/.local/bin/papercuts`.
 
-## 4. Review the list
+## Review the list
 
 Click the scissors icon in the menubar. Papercuts groups entries by repository. Click a repository header to expand or collapse its entries, then click a papercut to read the details and copy its prompt.
 
 Right-click an entry to open its repository in a detected terminal app or delete it after the issue is fixed.
+
+# Inspiration
+
+- https://x.com/steveruizok/status/2075303919664734295
+- https://github.com/wevm/frog
