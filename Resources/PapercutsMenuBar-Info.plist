@@ -4,18 +4,18 @@
 <dict>
 	<key>CFBundleDisplayName</key>
 	<string>Papercuts</string>
+	<key>CFBundleIconFile</key>
+	<string>Papercuts.icns</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.papercuts.app</string>
 	<key>CFBundleName</key>
 	<string>Papercuts</string>
-	<key>CFBundleIconFile</key>
-	<string>Papercuts.icns</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.1.4</string>
+	<string>0.1.5</string>
 	<key>CFBundleVersion</key>
-	<string>0.1.4</string>
+	<string>0.1.5</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>13.0</string>
 	<key>LSUIElement</key>
