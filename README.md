@@ -60,3 +60,8 @@ The skill includes a Python standard-library example. No CLI is required. Paperc
 Click the scissors icon in the menubar. Papercuts groups entries by repository. Click a repository header to expand or collapse its entries, then click a papercut to read the details and copy its prompt.
 
 Right-click an entry to open its repository in a detected terminal app or delete it after the issue is fixed.
+
+# Inspiration
+
+- https://x.com/steveruizok/status/2075303919664734295
+- https://github.com/wevm/frog
