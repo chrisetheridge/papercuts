@@ -7,7 +7,7 @@
   <p>A macOS menubar utility for capturing the small workflow frictions discovered by coding agents.</p>
 </div>
 
-## 1. Install the agent skill
+## Install the agent skill
 
 From a source checkout, run:
 
@@ -24,7 +24,7 @@ scripts/install.sh
 
 The installer links the skill into `~/.agents/skills`. It does not install a CLI; agents communicate with the running app through the Unix socket.
 
-## 2. Get Papercuts
+## Get Papercuts
 
 Choose one option. Papercuts requires macOS 13 or later.
 
@@ -43,7 +43,7 @@ scripts/run-app.sh
 
 The script builds and launches the app. Leave it running while you work.
 
-## 3. Record a papercut
+## Record a papercut
 
 When an agent finds a small workflow or quality issue, it checks the Papercuts Unix socket before adding a new entry:
 
@@ -55,7 +55,7 @@ The protocol sends one newline-delimited JSON request and receives one newline-d
 
 The skill includes a Python standard-library example. No CLI is required. Papercuts must be running before an agent can connect.
 
-## 4. Review the list
+## Review the list
 
 Click the scissors icon in the menubar. Papercuts groups entries by repository. Click a repository header to expand or collapse its entries, then click a papercut to read the details and copy its prompt.
 
