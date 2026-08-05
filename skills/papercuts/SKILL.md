@@ -5,61 +5,56 @@ description: During coding, debugging, testing, or repository setup, record non-
 
 # Papercuts
 
-## Log papercuts
+Use this workflow during implementation, debugging, testing, and repository setup.
 
-When you hit a small friction while working—a tool call that missed and had to be retried, a confusing or undocumented setup step, a flaky command, a stale cache, a misleading error, or a non-obvious gotcha—check Papercuts and log it proactively in the moment.
+## Decide immediately
 
-Papercuts listens on this per-user Unix-domain socket:
+When unexpected friction appears, pause before continuing and ask:
 
-```text
-~/Library/Application Support/Papercuts/papercuts.sock
-```
+1. Is this a repository, tool, setup, documentation, or workflow problem?
+2. Is it outside the current task or not worth fixing now?
+3. Would another agent likely lose time to it?
 
-Send one newline-delimited JSON request and read one newline-delimited JSON response. Use the standard library socket support available in your language. Python example:
+If all three answers are yes, log it now. Otherwise continue without logging.
 
-```python
-import json
-import os
-import socket
+Log examples: a retry caused by repository or tool behavior, confusing setup, missing documentation, a misleading error, stale state, flaky behavior, or a non-obvious gotcha.
 
-socket_path = os.path.expanduser("~/Library/Application Support/Papercuts/papercuts.sock")
+Do not log: transient command failures, expected test failures, deliberate experiments, issues fixed in the current task, or work the user explicitly requested.
 
-def papercuts(request):
-    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
-        connection.settimeout(5)
-        connection.connect(socket_path)
-        connection.sendall((json.dumps(request) + "\n").encode())
-        return json.loads(connection.makefile("rb").readline())
+## Add a papercut
 
-repository_path = os.getcwd()
-existing = papercuts({"action": "list", "repositoryPath": repository_path})
-```
-
-Review the returned papercuts for duplicates before sending an `add` request:
+Review existing entries for duplicates with an `{"action":"list","repositoryPath":os.getcwd()}` request, then send one newline-delimited JSON request to the Papercuts socket using standard-library Unix-domain socket support:
 
 ```python
-result = papercuts({
+import json, os, socket
+
+path = os.path.expanduser("~/Library/Application Support/Papercuts/papercuts.sock")
+request = {
     "action": "add",
-    "model": "<model>",
+    "model": "<current model>",
     "title": "Short issue title",
     "description": "What happened",
     "why": "Why this costs quality or time",
     "prompt": "A self-contained prompt describing how to fix it",
-    "repositoryPath": repository_path,
-})
+    "repositoryPath": os.getcwd(),
+}
+with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+    connection.settimeout(5)
+    connection.connect(path)
+    connection.sendall((json.dumps(request) + "\n").encode())
+    response = json.loads(connection.makefile("rb").readline())
+if response.get("error"):
+    raise RuntimeError(response["error"])
 ```
 
-To correct an existing entry, send its `id` from the `list` response. Omitted fields stay unchanged:
+Use one or two sentences for the description. Make the fix prompt concrete and independently actionable. Confirm the response succeeded before continuing.
 
-```python
-result = papercuts({
-    "action": "edit",
-    "id": existing_id,
-    "title": "Updated issue title",
-    "prompt": "Updated self-contained fix prompt",
-})
-```
+If the socket is unavailable, ask the user to launch Papercuts before logging; do not silently skip a qualifying papercut.
 
-The app detects the repository and current Git branch from `repositoryPath`. Set `branch` to override the detected branch. If the socket is unavailable, ask the user to launch Papercuts before logging.
+The app detects the repository and current Git branch from `repositoryPath`. To correct an entry, send `{"action":"edit","id":"<id>", ...}`; omitted fields stay unchanged.
 
-This is distinct from `LOG.md`, which records what you accomplished, and from Linear issues, which represent real bugs or tracked work. Do not create a papercut for a transient command failure or an issue already fixed in the current task.
+This is distinct from `LOG.md`, which records what was accomplished, and from Linear issues, which represent real bugs or tracked work.
+
+## Whole-session review
+
+Run a repository's session-review command only when the user asks. It may send the transcript to another model and must not run unprompted.

@@ -22,7 +22,7 @@ cd Papercuts-<version>-macos
 scripts/install.sh
 ```
 
-The installer links the skill into `~/.agents/skills`.
+The installer links the skill into `~/.agents/skills`. It does not install a CLI; agents communicate with the running app through the Unix socket.
 
 ## 2. Get Papercuts
 
@@ -53,7 +53,7 @@ When an agent finds a small workflow or quality issue, it checks the Papercuts U
 
 The protocol sends one newline-delimited JSON request and receives one newline-delimited JSON response. It supports `list` for duplicate checks, `add` for new papercuts, and `edit` for corrections. The app detects the repository and current Git branch from `repositoryPath`.
 
-The skill includes a Python standard-library example. Papercuts must be running before an agent can connect.
+The skill includes a Python standard-library example. No CLI is required. Papercuts must be running before an agent can connect.
 
 ## 4. Review the list
 
