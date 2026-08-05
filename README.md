@@ -7,7 +7,7 @@
   <p>A macOS menubar utility for capturing the small workflow frictions discovered by coding agents.</p>
 </div>
 
-## 1. Install the agent skill and CLI
+## 1. Install the agent skill
 
 From a source checkout, run:
 
@@ -22,7 +22,7 @@ cd Papercuts-<version>-macos
 scripts/install.sh
 ```
 
-The installer puts `papercut` in `/usr/local/bin` and links the skill into `~/.agents/skills`. It may ask for your administrator password.
+The installer links the skill into `~/.agents/skills`.
 
 ## 2. Get Papercuts
 
@@ -45,18 +45,15 @@ The script builds and launches the app. Leave it running while you work.
 
 ## 3. Record a papercut
 
-When an agent finds a small workflow or quality issue, run this from the affected repository:
+When an agent finds a small workflow or quality issue, it checks the Papercuts Unix socket before adding a new entry:
 
-```sh
-papercut add \
-  --model "gpt-5" \
-  --title "Short issue title" \
-  --description "What happened" \
-  --why "Why it matters" \
-  --prompt "How to fix it"
+```text
+~/Library/Application Support/Papercuts/papercuts.sock
 ```
 
-Papercuts detects the repository and current Git branch automatically. Use `--repo <path>` to record an issue for another repository.
+The protocol sends one newline-delimited JSON request and receives one newline-delimited JSON response. It supports `list` for duplicate checks, `add` for new papercuts, and `edit` for corrections. The app detects the repository and current Git branch from `repositoryPath`.
+
+The skill includes a Python standard-library example. Papercuts must be running before an agent can connect.
 
 ## 4. Review the list
 

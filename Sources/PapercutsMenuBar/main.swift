@@ -1,4 +1,5 @@
 import AppKit
+import Darwin
 import PapercutsCore
 import SwiftUI
 
@@ -16,6 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let model = PapercutsModel()
     private var statusItem: NSStatusItem!
     private var panel: NSPanel!
+    private var socketServer: PapercutsSocketServer!
     private let panelSize = NSSize(width: 410, height: 560)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -32,6 +34,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         model.onChange = { [weak self] in self?.updateStatusItem() }
         updateStatusItem()
+        socketServer = PapercutsSocketServer(model: model)
 
         panel = NSPanel(
             contentRect: NSRect(origin: .zero, size: panelSize),
@@ -50,6 +53,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.contentView?.layer?.backgroundColor = NSColor.clear.cgColor
         panel.contentView?.layer?.cornerRadius = 14
         panel.contentView?.layer?.masksToBounds = true
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        socketServer?.stop()
     }
 
     @objc private func statusItemClicked(_ sender: NSStatusBarButton) {
@@ -162,6 +169,277 @@ final class PapercutsModel: ObservableObject {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(cut.formattedPrompt, forType: .string)
     }
+
+    func add(
+        title: String,
+        description: String,
+        whyItMatters: String,
+        prompt: String,
+        repositoryPath: String,
+        branch: String?,
+        model: String?
+    ) throws -> Papercut {
+        let context = RepositoryContext.detect(at: URL(fileURLWithPath: repositoryPath))
+        let papercut = Papercut(
+            title: title,
+            description: description,
+            whyItMatters: whyItMatters,
+            prompt: prompt,
+            repository: context.repository,
+            repositoryPath: context.repositoryPath,
+            branch: branch ?? context.branch,
+            model: model
+        )
+        try store.add(papercut)
+        reload()
+        return papercut
+    }
+
+    func list(repositoryPath: String?) throws -> [Papercut] {
+        let cuts = try store.all()
+        guard let repositoryPath else { return cuts }
+        let context = RepositoryContext.detect(at: URL(fileURLWithPath: repositoryPath))
+        return cuts.filter { $0.repositoryPath == context.repositoryPath }
+    }
+
+    func edit(
+        id: UUID,
+        title: String?,
+        description: String?,
+        whyItMatters: String?,
+        prompt: String?,
+        branch: String?,
+        model: String?
+    ) throws -> Papercut? {
+        guard var papercut = try store.all().first(where: { $0.id == id }) else { return nil }
+        if let title { papercut.title = title }
+        if let description { papercut.description = description }
+        if let whyItMatters { papercut.whyItMatters = whyItMatters }
+        if let prompt { papercut.prompt = prompt }
+        if let branch { papercut.branch = branch }
+        if let model { papercut.model = model }
+        guard try store.update(papercut) else { return nil }
+        reload()
+        return papercut
+    }
+}
+
+private struct PapercutsSocketRequest: Decodable {
+    let action: String
+    let id: UUID?
+    let title: String?
+    let description: String?
+    let why: String?
+    let prompt: String?
+    let repositoryPath: String?
+    let branch: String?
+    let model: String?
+}
+
+private struct PapercutsSocketResponse: Encodable {
+    let ok: Bool
+    let papercut: Papercut?
+    let papercuts: [Papercut]?
+    let error: String?
+}
+
+private let papercutsSocketMaxRequestSize = 64 * 1024
+
+@MainActor
+private final class PapercutsSocketServer {
+    private static let socketURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("Papercuts", isDirectory: true)
+        .appendingPathComponent("papercuts.sock")
+    private let model: PapercutsModel
+    private var listenerDescriptor: Int32 = -1
+    private var listenerSource: DispatchSourceRead?
+
+    init(model: PapercutsModel) {
+        self.model = model
+        start()
+    }
+
+    func stop() {
+        listenerSource?.cancel()
+        listenerSource = nil
+        listenerDescriptor = -1
+        unlink(Self.socketURL.path)
+    }
+
+    private func start() {
+        let fileManager = FileManager.default
+        do {
+            try fileManager.createDirectory(at: Self.socketURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        } catch {
+            print("Papercuts socket unavailable: \(error.localizedDescription)")
+            return
+        }
+
+        unlink(Self.socketURL.path)
+
+        let descriptor = socket(AF_UNIX, SOCK_STREAM, 0)
+        guard descriptor >= 0 else {
+            print("Papercuts socket unavailable: could not create socket")
+            return
+        }
+
+        var address = sockaddr_un()
+        address.sun_family = sa_family_t(AF_UNIX)
+        let pathBytes = Array(Self.socketURL.path.utf8)
+        guard pathBytes.count < MemoryLayout.size(ofValue: address.sun_path) else {
+            close(descriptor)
+            print("Papercuts socket unavailable: socket path is too long")
+            return
+        }
+        _ = pathBytes.withUnsafeBytes { source in
+            withUnsafeMutableBytes(of: &address.sun_path) { destination in
+                memcpy(destination.baseAddress, source.baseAddress, pathBytes.count)
+            }
+        }
+
+        let bound = withUnsafePointer(to: &address) { pointer in
+            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                Darwin.bind(descriptor, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
+            }
+        }
+        guard bound == 0, listen(descriptor, 16) == 0 else {
+            close(descriptor)
+            print("Papercuts socket unavailable: could not bind socket")
+            return
+        }
+
+        chmod(Self.socketURL.path, 0o600)
+        _ = fcntl(descriptor, F_SETFL, O_NONBLOCK)
+        listenerDescriptor = descriptor
+
+        let source = DispatchSource.makeReadSource(fileDescriptor: descriptor, queue: .main)
+        source.setEventHandler { [weak self] in
+            Task { @MainActor in self?.acceptConnections() }
+        }
+        source.setCancelHandler {
+            close(descriptor)
+        }
+        source.resume()
+        listenerSource = source
+    }
+
+    private func acceptConnections() {
+        guard listenerDescriptor >= 0 else { return }
+        while true {
+            let client = accept(listenerDescriptor, nil, nil)
+            guard client >= 0 else {
+                if errno == EAGAIN || errno == EWOULDBLOCK { return }
+                return
+            }
+
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                guard let requestData = Self.readRequest(from: client) else {
+                    close(client)
+                    return
+                }
+
+                Task { @MainActor [weak self] in
+                    guard let self else {
+                        close(client)
+                        return
+                    }
+                    Self.write(self.response(for: requestData), to: client)
+                    close(client)
+                }
+            }
+        }
+    }
+
+    private func response(for data: Data) -> Data {
+        do {
+            let request = try JSONDecoder().decode(PapercutsSocketRequest.self, from: data)
+            switch request.action {
+            case "list":
+                let papercuts = try model.list(repositoryPath: request.repositoryPath)
+                return encoded(PapercutsSocketResponse(ok: true, papercut: nil, papercuts: papercuts, error: nil))
+            case "add":
+                guard
+                    let title = nonEmpty(request.title),
+                    let description = nonEmpty(request.description),
+                    let why = nonEmpty(request.why),
+                    let prompt = nonEmpty(request.prompt),
+                    let repositoryPath = nonEmpty(request.repositoryPath)
+                else {
+                    return encoded(error: "add requires title, description, why, prompt, and repositoryPath")
+                }
+
+                let papercut = try model.add(
+                    title: title,
+                    description: description,
+                    whyItMatters: why,
+                    prompt: prompt,
+                    repositoryPath: repositoryPath,
+                    branch: request.branch,
+                    model: request.model
+                )
+                return encoded(PapercutsSocketResponse(ok: true, papercut: papercut, papercuts: nil, error: nil))
+            case "edit":
+                guard let id = request.id else {
+                    return encoded(error: "edit requires id")
+                }
+                guard let papercut = try model.edit(
+                    id: id,
+                    title: request.title,
+                    description: request.description,
+                    whyItMatters: request.why,
+                    prompt: request.prompt,
+                    branch: request.branch,
+                    model: request.model
+                ) else {
+                    return encoded(error: "papercut not found: \(id.uuidString)")
+                }
+                return encoded(PapercutsSocketResponse(ok: true, papercut: papercut, papercuts: nil, error: nil))
+            default:
+                return encoded(error: "unknown action: \(request.action)")
+            }
+        } catch {
+            return encoded(error: error.localizedDescription)
+        }
+    }
+
+    private func nonEmpty(_ value: String?) -> String? {
+        guard let value, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return value
+    }
+
+    private func encoded(_ response: PapercutsSocketResponse) -> Data {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        var data = (try? encoder.encode(response)) ?? Data(#"{\"ok\":false,\"error\":\"Could not encode response\"}"#.utf8)
+        data.append(10)
+        return data
+    }
+
+    private func encoded(error: String) -> Data {
+        encoded(PapercutsSocketResponse(ok: false, papercut: nil, papercuts: nil, error: error))
+    }
+
+    private nonisolated static func readRequest(from client: Int32) -> Data? {
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: 4096)
+
+        while data.count < papercutsSocketMaxRequestSize {
+            let count = buffer.withUnsafeMutableBytes { bytes in
+                Darwin.read(client, bytes.baseAddress, bytes.count)
+            }
+            guard count > 0 else { return data.isEmpty ? nil : data }
+            data.append(buffer, count: count)
+            if buffer[..<count].contains(10) { return data }
+        }
+
+        return nil
+    }
+
+    private nonisolated static func write(_ data: Data, to client: Int32) {
+        data.withUnsafeBytes { bytes in
+            _ = Darwin.write(client, bytes.baseAddress, bytes.count)
+        }
+    }
 }
 
 struct TerminalApplication: Hashable, Identifiable {
@@ -221,7 +499,7 @@ struct PapercutPopover: View {
                 if let errorMessage = model.errorMessage {
                     EmptyStateView(title: "Store unavailable", systemImage: "exclamationmark.triangle", message: errorMessage)
                 } else if model.cuts.isEmpty {
-                    EmptyStateView(title: "No papercuts yet", systemImage: "sparkles", message: "Agents can add one with the papercut CLI.")
+                    EmptyStateView(title: "No papercuts yet", systemImage: "sparkles", message: "Agents can add one through the Papercuts socket.")
                 } else {
                     ScrollView {
                         LazyVStack(spacing: 0) {

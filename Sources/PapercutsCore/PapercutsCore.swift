@@ -135,6 +135,17 @@ public final class PapercutStore: @unchecked Sendable {
         }
     }
 
+    @discardableResult
+    public func update(_ papercut: Papercut) throws -> Bool {
+        try withLock {
+            var cuts = try readUnlocked()
+            guard let index = cuts.firstIndex(where: { $0.id == papercut.id }) else { return false }
+            cuts[index] = papercut
+            try writeUnlocked(cuts)
+            return true
+        }
+    }
+
     public func delete(id: UUID) throws {
         try withLock {
             var cuts = try readUnlocked()

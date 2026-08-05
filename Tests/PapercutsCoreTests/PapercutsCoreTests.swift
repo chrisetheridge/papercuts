@@ -14,6 +14,10 @@ import Testing
     #expect(try store.all().map(\.title) == ["Newer", "Older"])
     try store.setRead(true, for: newer.id)
     #expect(try store.all().first?.isRead == true)
+    var edited = try store.all().first!
+    edited.title = "Edited"
+    #expect(try store.update(edited))
+    #expect(try store.all().first?.title == "Edited")
     #expect(newer.formattedPrompt.contains("Context:\nd"))
     #expect(newer.formattedPrompt.contains("Why it matters:\nw"))
     #expect(newer.formattedPrompt.contains("How to fix it:\np"))
