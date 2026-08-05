@@ -18,6 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var panel: NSPanel!
     private var socketServer: PapercutsSocketServer!
+    private var globalMouseMonitor: Any?
     private let panelSize = NSSize(width: 410, height: 560)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -53,9 +54,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.contentView?.layer?.backgroundColor = NSColor.clear.cgColor
         panel.contentView?.layer?.cornerRadius = 14
         panel.contentView?.layer?.masksToBounds = true
+
+        globalMouseMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        ) { [weak self] _ in
+            guard let self, self.panel.isVisible else { return }
+            let location = NSEvent.mouseLocation
+            guard !self.panel.frame.contains(location), !self.statusItemFrame.contains(location) else { return }
+            self.panel.orderOut(nil)
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        if let globalMouseMonitor {
+            NSEvent.removeMonitor(globalMouseMonitor)
+        }
         socketServer?.stop()
     }
 
@@ -86,6 +99,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             panel.setFrame(NSRect(origin: origin, size: panelSize), display: false)
             panel.orderFrontRegardless()
         }
+    }
+
+    private var statusItemFrame: NSRect {
+        guard let button = statusItem?.button, let window = button.window else { return .zero }
+        return window.convertToScreen(button.convert(button.bounds, to: nil))
     }
 
     private func showContextMenu(for button: NSStatusBarButton, event: NSEvent) {
@@ -222,25 +240,6 @@ final class PapercutsModel: ObservableObject {
         reload()
         return papercut
     }
-}
-
-private struct PapercutsSocketRequest: Decodable {
-    let action: String
-    let id: UUID?
-    let title: String?
-    let description: String?
-    let why: String?
-    let prompt: String?
-    let repositoryPath: String?
-    let branch: String?
-    let model: String?
-}
-
-private struct PapercutsSocketResponse: Encodable {
-    let ok: Bool
-    let papercut: Papercut?
-    let papercuts: [Papercut]?
-    let error: String?
 }
 
 private let papercutsSocketMaxRequestSize = 64 * 1024

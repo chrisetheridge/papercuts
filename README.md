@@ -22,7 +22,7 @@ cd Papercuts-<version>-macos
 scripts/install.sh
 ```
 
-The installer links the skill into `~/.agents/skills`. It does not install a CLI; agents communicate with the running app through the Unix socket.
+The installer copies the app to `~/Applications`, links the skill into `~/.agents/skills`, and installs the CLI at `~/.local/bin/papercuts`.
 
 ## 2. Get Papercuts
 
@@ -45,15 +45,15 @@ The script builds and launches the app. Leave it running while you work.
 
 ## 3. Record a papercut
 
-When an agent finds a small workflow or quality issue, it checks the Papercuts Unix socket before adding a new entry:
+When an agent finds a small workflow or quality issue, it checks existing entries with the CLI before adding a new one:
 
-```text
-~/Library/Application Support/Papercuts/papercuts.sock
+```sh
+~/.local/bin/papercuts list --repository-path "$PWD"
 ```
 
-The protocol sends one newline-delimited JSON request and receives one newline-delimited JSON response. It supports `list` for duplicate checks, `add` for new papercuts, and `edit` for corrections. The app detects the repository and current Git branch from `repositoryPath`.
+The CLI supports `list` for duplicate checks, `add` for new papercuts, and `edit` for corrections. Papercuts must be running before a CLI request can connect.
 
-The skill includes a Python standard-library example. No CLI is required. Papercuts must be running before an agent can connect.
+If `~/.local/bin` is not on `PATH`, agents can invoke the CLI with its absolute path: `~/.local/bin/papercuts`.
 
 ## 4. Review the list
 

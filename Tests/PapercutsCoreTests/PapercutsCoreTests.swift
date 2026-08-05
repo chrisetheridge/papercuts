@@ -24,3 +24,25 @@ import Testing
     try store.delete(id: newer.id)
     #expect(try store.all().map(\.title) == ["Older"])
 }
+
+@Test func socketRequestRoundTripsWireFields() throws {
+    let request = PapercutsSocketRequest(
+        action: "add",
+        title: "Title",
+        description: "Description",
+        why: "Why",
+        prompt: "Prompt",
+        repositoryPath: "/repo",
+        branch: "main",
+        model: "gpt-5"
+    )
+    let decoded = try JSONDecoder().decode(
+        PapercutsSocketRequest.self,
+        from: JSONEncoder().encode(request)
+    )
+
+    #expect(decoded.action == "add")
+    #expect(decoded.title == "Title")
+    #expect(decoded.repositoryPath == "/repo")
+    #expect(decoded.model == "gpt-5")
+}

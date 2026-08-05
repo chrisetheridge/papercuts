@@ -10,6 +10,7 @@ app_dir="$root_dir/.build/Papercuts.app"
 rm -rf "$app_dir"
 mkdir -p "$app_dir/Contents/MacOS" "$app_dir/Contents/Resources"
 cp .build/release/PapercutsMenuBar "$app_dir/Contents/MacOS/Papercuts"
+cp .build/release/PapercutsCLI "$app_dir/Contents/MacOS/PapercutsCLI"
 cp Resources/PapercutsMenuBar-Info.plist "$app_dir/Contents/Info.plist"
 
 echo "$app_dir"

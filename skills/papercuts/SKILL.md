@@ -23,35 +23,35 @@ Do not log: transient command failures, expected test failures, deliberate exper
 
 ## Add a papercut
 
-Review existing entries for duplicates with an `{"action":"list","repositoryPath":os.getcwd()}` request, then send one newline-delimited JSON request to the Papercuts socket using standard-library Unix-domain socket support:
+Review existing entries for duplicates with the installed `papercuts` CLI:
 
-```python
-import json, os, socket
+```sh
+cli="$HOME/.local/bin/papercuts"
+response="$($cli list --repository-path "$PWD")"
+```
 
-path = os.path.expanduser("~/Library/Application Support/Papercuts/papercuts.sock")
-request = {
-    "action": "add",
-    "model": "<current model>",
-    "title": "Short issue title",
-    "description": "What happened",
-    "why": "Why this costs quality or time",
-    "prompt": "A self-contained prompt describing how to fix it",
-    "repositoryPath": os.getcwd(),
-}
-with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
-    connection.settimeout(5)
-    connection.connect(path)
-    connection.sendall((json.dumps(request) + "\n").encode())
-    response = json.loads(connection.makefile("rb").readline())
-if response.get("error"):
-    raise RuntimeError(response["error"])
+Then add the entry with:
+
+```sh
+response="$($cli add \
+  --title "Short issue title" \
+  --description "What happened" \
+  --why "Why this costs quality or time" \
+  --prompt "A self-contained prompt describing how to fix it" \
+  --model "<current model>")"
 ```
 
 Use one or two sentences for the description. Make the fix prompt concrete and independently actionable. Confirm the response succeeded before continuing.
 
-If the socket is unavailable, ask the user to launch Papercuts before logging; do not silently skip a qualifying papercut.
+If the CLI is unavailable, ask the user to run the installer. If the socket is unavailable, ask the user to launch Papercuts before logging; do not silently skip a qualifying papercut.
 
-The app detects the repository and current Git branch from `repositoryPath`. To correct an entry, send `{"action":"edit","id":"<id>", ...}`; omitted fields stay unchanged.
+The app detects the repository and current Git branch from `repositoryPath`. To correct an entry, use:
+
+```sh
+response="$($cli edit <id> --title "Updated title" --prompt "Updated fix prompt")"
+```
+
+Omit fields that should stay unchanged.
 
 This is distinct from `LOG.md`, which records what was accomplished, and from Linear issues, which represent real bugs or tracked work.
 
