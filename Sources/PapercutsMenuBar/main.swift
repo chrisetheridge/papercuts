@@ -1,0 +1,520 @@
+import AppKit
+import PapercutsCore
+import SwiftUI
+
+@main
+struct PapercutsMenuBarApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+
+    var body: some Scene {
+        Settings { EmptyView() }
+    }
+}
+
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    let model = PapercutsModel()
+    private var statusItem: NSStatusItem!
+    private var popover: NSPopover!
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApplication.shared.setActivationPolicy(.accessory)
+
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        guard let button = statusItem.button else { return }
+        button.image = NSImage(systemSymbolName: "scissors", accessibilityDescription: "Papercuts")
+        button.imagePosition = .imageLeading
+        button.font = .systemFont(ofSize: 11, weight: .semibold)
+        button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        button.target = self
+        button.action = #selector(statusItemClicked(_:))
+
+        model.onChange = { [weak self] in self?.updateStatusItem() }
+        updateStatusItem()
+
+        popover = NSPopover()
+        popover.behavior = .transient
+        popover.appearance = NSAppearance(named: .darkAqua)
+        popover.contentSize = NSSize(width: 410, height: 560)
+        popover.contentViewController = NSHostingController(rootView: PapercutPopover(model: model))
+        popover.contentViewController?.view.wantsLayer = true
+        popover.contentViewController?.view.layer?.backgroundColor = NSColor.clear.cgColor
+    }
+
+    @objc private func statusItemClicked(_ sender: NSStatusBarButton) {
+        guard let event = NSApp.currentEvent else {
+            togglePopover()
+            return
+        }
+
+        if event.type == .rightMouseUp {
+            showContextMenu(for: sender, event: event)
+        } else {
+            togglePopover()
+        }
+    }
+
+    private func togglePopover() {
+        guard let button = statusItem.button else { return }
+        if popover.isShown {
+            popover.performClose(nil)
+        } else {
+            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        }
+    }
+
+    private func showContextMenu(for button: NSStatusBarButton, event: NSEvent) {
+        let menu = NSMenu()
+        menu.appearance = NSAppearance(named: .darkAqua)
+
+        let refresh = NSMenuItem(title: "Refresh", action: #selector(refreshPapercuts), keyEquivalent: "")
+        refresh.target = self
+        menu.addItem(refresh)
+        menu.addItem(.separator())
+
+        let quit = NSMenuItem(title: "Quit Papercuts", action: #selector(quit), keyEquivalent: "q")
+        quit.target = self
+        menu.addItem(quit)
+
+        NSMenu.popUpContextMenu(menu, with: event, for: button)
+    }
+
+    @objc private func refreshPapercuts() {
+        model.reload()
+    }
+
+    @objc private func quit() {
+        NSApp.terminate(nil)
+    }
+
+    private func updateStatusItem() {
+        guard let button = statusItem?.button else { return }
+        button.title = model.unreadCount > 0 ? "\(model.unreadCount)" : ""
+        button.toolTip = model.unreadCount > 0 ? "Papercuts — \(model.unreadCount) unread" : "Papercuts"
+    }
+}
+
+@MainActor
+final class PapercutsModel: ObservableObject {
+    @Published private(set) var cuts: [Papercut] = []
+    @Published private(set) var errorMessage: String?
+    var onChange: (() -> Void)?
+
+    private let store = PapercutStore.shared
+    private var timer: Timer?
+
+    init() {
+        reload()
+        timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.reload() }
+        }
+    }
+
+    var unreadCount: Int { cuts.filter { !$0.isRead }.count }
+
+    func reload() {
+        do {
+            cuts = try store.all()
+            errorMessage = nil
+            onChange?()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func setRead(_ isRead: Bool, for cut: Papercut) {
+        do {
+            try store.setRead(isRead, for: cut.id)
+            reload()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func delete(_ cut: Papercut) {
+        do {
+            try store.delete(id: cut.id)
+            reload()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func copyPrompt(for cut: Papercut) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(cut.formattedPrompt, forType: .string)
+    }
+}
+
+struct TerminalApplication: Hashable, Identifiable {
+    let id: String
+    let name: String
+    let applicationURL: URL
+}
+
+enum TerminalLauncher {
+    private static let knownTerminals = [
+        ("Terminal", "com.apple.Terminal"),
+        ("iTerm2", "com.googlecode.iterm2"),
+        ("Warp", "dev.warp.Warp-Stable"),
+        ("Ghostty", "com.mitchellh.ghostty"),
+        ("WezTerm", "com.github.wez.wezterm"),
+        ("Alacritty", "org.alacritty"),
+        ("kitty", "net.kovidgoyal.kitty")
+    ]
+
+    static func installed() -> [TerminalApplication] {
+        knownTerminals.compactMap { name, bundleIdentifier in
+            guard let applicationURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier) else {
+                return nil
+            }
+            return TerminalApplication(id: bundleIdentifier, name: name, applicationURL: applicationURL)
+        }
+    }
+
+    static func open(_ terminal: TerminalApplication, at path: String) {
+        let directoryURL = URL(fileURLWithPath: path, isDirectory: true)
+        guard FileManager.default.fileExists(atPath: directoryURL.path) else { return }
+        NSWorkspace.shared.open(
+            [directoryURL],
+            withApplicationAt: terminal.applicationURL,
+            configuration: NSWorkspace.OpenConfiguration()
+        )
+    }
+}
+
+struct PapercutPopover: View {
+    @ObservedObject var model: PapercutsModel
+    @State private var selectedID: UUID?
+    private let terminals = TerminalLauncher.installed()
+
+    var body: some View {
+        ZStack {
+            PapercutVisualEffect(material: .hudWindow)
+                .ignoresSafeArea()
+            Color.black.opacity(0.42)
+                .ignoresSafeArea()
+
+            VStack(alignment: .leading, spacing: 0) {
+                header
+                Rectangle()
+                    .fill(PapercutTheme.border.opacity(0.9))
+                    .frame(height: 1)
+
+                if let errorMessage = model.errorMessage {
+                    EmptyStateView(title: "Store unavailable", systemImage: "exclamationmark.triangle", message: errorMessage)
+                } else if model.cuts.isEmpty {
+                    EmptyStateView(title: "No papercuts yet", systemImage: "sparkles", message: "Agents can add one with the papercut CLI.")
+                } else {
+                    ScrollView {
+                        LazyVStack(spacing: 0) {
+                            ForEach(model.cuts) { cut in
+                                PapercutRow(
+                                    cut: cut,
+                                    isExpanded: selectedID == cut.id,
+                                onToggle: {
+                                        withAnimation(.spring(response: 0.22, dampingFraction: 1)) {
+                                            selectedID = selectedID == cut.id ? nil : cut.id
+                                        }
+                                        if !cut.isRead { model.setRead(true, for: cut) }
+                                },
+                                onMarkUnread: { model.setRead(false, for: cut) },
+                                onCopy: { model.copyPrompt(for: cut) },
+                                onDelete: {
+                                    if selectedID == cut.id { selectedID = nil }
+                                    model.delete(cut)
+                                },
+                                onOpenInTerminal: { terminal in
+                                    TerminalLauncher.open(terminal, at: cut.repositoryPath)
+                                },
+                                terminals: terminals
+                            )
+                            }
+                        }
+                        .padding(.horizontal, 10)
+                    }
+                    .scrollIndicators(.hidden)
+                }
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .shadow(color: .black.opacity(0.42), radius: 24, y: 12)
+        .preferredColorScheme(.dark)
+    }
+
+    private var header: some View {
+        HStack(alignment: .center, spacing: 10) {
+            Image(systemName: "scissors")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(PapercutTheme.primary)
+                .frame(width: 28, height: 28)
+                .background(PapercutTheme.surface, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).stroke(PapercutTheme.border, lineWidth: 1))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Papercuts")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(PapercutTheme.primary)
+                Text(model.unreadCount == 0 ? "All caught up" : "\(model.unreadCount) need attention")
+                    .font(.system(size: 11))
+                    .foregroundStyle(PapercutTheme.secondary)
+            }
+
+            Spacer()
+
+            Button(action: model.reload) {
+                Image(systemName: "arrow.clockwise")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(PapercutTheme.secondary)
+                    .frame(width: 28, height: 28)
+                    .background(PapercutTheme.surface, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).stroke(PapercutTheme.border, lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            .help("Refresh")
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 13)
+    }
+}
+
+struct EmptyStateView: View {
+    let title: String
+    let systemImage: String
+    let message: String
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Image(systemName: systemImage)
+                .font(.system(size: 24, weight: .medium))
+                .foregroundStyle(PapercutTheme.secondary)
+            Text(title)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(PapercutTheme.primary)
+            Text(message)
+                .font(.system(size: 11))
+                .foregroundStyle(PapercutTheme.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(32)
+    }
+}
+
+private struct PapercutVisualEffect: NSViewRepresentable {
+    let material: NSVisualEffectView.Material
+
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = material
+        view.blendingMode = .behindWindow
+        view.state = .active
+        return view
+    }
+
+    func updateNSView(_ view: NSVisualEffectView, context: Context) {
+        view.material = material
+    }
+}
+
+struct PapercutRow: View {
+    let cut: Papercut
+    let isExpanded: Bool
+    let onToggle: () -> Void
+    let onMarkUnread: () -> Void
+    let onCopy: () -> Void
+    let onDelete: () -> Void
+    let onOpenInTerminal: (TerminalApplication) -> Void
+    let terminals: [TerminalApplication]
+    @State private var didCopy = false
+    @State private var isHovering = false
+    @State private var showingDeleteConfirmation = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button(action: onToggle) {
+                HStack(alignment: .top, spacing: 9) {
+                    Circle()
+                        .fill(cut.isRead ? PapercutTheme.muted : PapercutTheme.primary)
+                        .frame(width: 6, height: 6)
+                        .padding(.top, 4)
+
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(cut.title)
+                            .font(.system(size: 13, weight: cut.isRead ? .medium : .semibold))
+                            .foregroundStyle(PapercutTheme.primary)
+                            .multilineTextAlignment(.leading)
+
+                        HStack(spacing: 6) {
+                            Text(cut.repository)
+                            Text("·")
+                            Text(cut.branch)
+                            if let model = cut.model, !model.isEmpty {
+                                Text("·")
+                                Text(model)
+                            }
+                            Spacer(minLength: 0)
+                            Text(relativeAge(cut.createdAt))
+                        }
+                        .font(.system(size: 10))
+                        .foregroundStyle(PapercutTheme.secondary)
+                        .lineLimit(1)
+                    }
+
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(PapercutTheme.muted)
+                        .padding(.top, 2)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if isExpanded {
+                VStack(alignment: .leading, spacing: 14) {
+                    detail("What happened", cut.description)
+                    detail("Why it matters", cut.whyItMatters)
+
+                    VStack(alignment: .leading, spacing: 7) {
+                        Text("SUGGESTED PROMPT")
+                            .font(.system(size: 10, weight: .semibold))
+                            .tracking(0.7)
+                            .foregroundStyle(PapercutTheme.secondary)
+                        Text(cut.prompt)
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundStyle(PapercutTheme.primary.opacity(0.9))
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(PapercutTheme.background, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(PapercutTheme.border, lineWidth: 1))
+                    }
+
+                    HStack(spacing: 8) {
+                        Button {
+                            onCopy()
+                            withAnimation(.spring(response: 0.2, dampingFraction: 1)) { didCopy = true }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                                withAnimation(.easeOut(duration: 0.12)) { didCopy = false }
+                            }
+                        } label: {
+                            Label(didCopy ? "Copied" : "Copy prompt", systemImage: didCopy ? "checkmark" : "doc.on.doc")
+                        }
+                        .buttonStyle(PapercutButtonStyle(prominent: true))
+                        .controlSize(.small)
+
+                        Button("Mark unread", action: onMarkUnread)
+                            .buttonStyle(PapercutButtonStyle(prominent: false))
+                            .controlSize(.small)
+                    }
+                }
+                .padding(.leading, 15)
+                .padding(.top, 13)
+                .padding(.bottom, 14)
+            }
+        }
+        .padding(.horizontal, 7)
+        .padding(.vertical, 11)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(isExpanded ? PapercutTheme.surface : (isHovering ? PapercutTheme.hover : .clear))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(isExpanded ? PapercutTheme.borderStrong : .clear, lineWidth: 1)
+        )
+        .onHover { isHovering = $0 }
+        .contextMenu {
+            Button {
+                onCopy()
+            } label: {
+                Label("Copy prompt", systemImage: "doc.on.doc")
+            }
+
+            if terminals.isEmpty {
+                Text("No terminal apps detected")
+            } else {
+                Menu("Open in") {
+                    ForEach(terminals) { terminal in
+                        Button {
+                            onOpenInTerminal(terminal)
+                        } label: {
+                            Label(terminal.name, systemImage: "terminal")
+                        }
+                    }
+                }
+            }
+
+            Divider()
+
+            Button(role: .destructive) {
+                showingDeleteConfirmation = true
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        }
+        .confirmationDialog(
+            "Delete this papercut?",
+            isPresented: $showingDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive, action: onDelete)
+            Button("Cancel", role: .cancel) { }
+        }
+    }
+
+    private func detail(_ title: String, _ text: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title.uppercased())
+                .font(.system(size: 10, weight: .semibold))
+                .tracking(0.7)
+                .foregroundStyle(PapercutTheme.secondary)
+            Text(text)
+                .font(.system(size: 12.5))
+                .foregroundStyle(PapercutTheme.primary.opacity(0.9))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+private enum PapercutTheme {
+    static let background = Color(red: 0.0, green: 0.0, blue: 0.0)
+    static let surface = Color(red: 0.039, green: 0.039, blue: 0.039)
+    static let hover = Color(red: 0.067, green: 0.067, blue: 0.067)
+    static let border = Color(red: 0.13, green: 0.13, blue: 0.13)
+    static let borderStrong = Color(red: 0.22, green: 0.22, blue: 0.22)
+    static let primary = Color(red: 0.96, green: 0.96, blue: 0.96)
+    static let secondary = Color(red: 0.55, green: 0.55, blue: 0.58)
+    static let muted = Color(red: 0.32, green: 0.32, blue: 0.35)
+}
+
+private func relativeAge(_ date: Date) -> String {
+    let seconds = max(0, Date().timeIntervalSince(date))
+    if seconds < 60 { return "now" }
+    if seconds < 3_600 { return "\(Int(seconds / 60))m ago" }
+    if seconds < 86_400 { return "\(Int(seconds / 3_600))h ago" }
+    return "\(Int(seconds / 86_400))d ago"
+}
+
+private struct PapercutButtonStyle: ButtonStyle {
+    let prominent: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(prominent ? PapercutTheme.background : PapercutTheme.primary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(prominent ? PapercutTheme.primary : PapercutTheme.surface, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .overlay {
+                if !prominent {
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .stroke(PapercutTheme.borderStrong, lineWidth: 1)
+                }
+            }
+            .scaleEffect(configuration.isPressed ? 0.98 : 1)
+            .opacity(configuration.isPressed ? 0.82 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
