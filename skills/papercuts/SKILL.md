@@ -52,9 +52,3 @@ response="$($cli edit <id> --title "Updated title" --prompt "Updated fix prompt"
 ```
 
 Omit fields that should stay unchanged.
-
-This is distinct from `LOG.md`, which records what was accomplished, and from Linear issues, which represent real bugs or tracked work.
-
-## Whole-session review
-
-Run a repository's session-review command only when the user asks. It may send the transcript to another model and must not run unprompted.
