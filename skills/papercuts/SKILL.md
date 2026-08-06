@@ -37,11 +37,11 @@ response="$($cli add \
   --title "Short issue title" \
   --description "What happened" \
   --why "Why this costs quality or time" \
-  --prompt "A self-contained prompt describing how to fix it" \
+  --prompt "A self-contained prompt asking the agent to propose actionable ways to fix it" \
   --model "<current model>")"
 ```
 
-Use one or two sentences for the description. Make the fix prompt concrete and independently actionable. Confirm the response succeeded before continuing.
+Use one or two sentences for the description. Make the attached prompt concrete and independently actionable: ask the prompted agent to investigate the issue and propose specific ways to fix it, but do not ask it to implement a fix immediately. Confirm the CLI response succeeded before continuing.
 
 If the CLI is unavailable, ask the user to run the installer. If the socket is unavailable, ask the user to launch Papercuts before logging; do not silently skip a qualifying papercut.
 

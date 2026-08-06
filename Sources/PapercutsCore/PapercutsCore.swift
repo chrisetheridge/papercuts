@@ -42,7 +42,7 @@ public struct Papercut: Codable, Equatable, Identifiable, Sendable {
 
     public var formattedPrompt: String {
         """
-        You're fixing a small issue another agent encountered. Use the context and instruction to make the smallest possible fix to improve work for other agents.
+        You're investigating a small issue another agent encountered. Use the context and instruction to propose concrete, actionable ways to fix it. Do not modify files or implement a fix yet. Explain the likely root cause, recommend an approach, and call out important tradeoffs.
 
         Context:
         \(description)
@@ -50,7 +50,7 @@ public struct Papercut: Codable, Equatable, Identifiable, Sendable {
         Why it matters:
         \(whyItMatters)
 
-        How to fix it:
+        Investigation and fix guidance:
         \(prompt)
         """
     }

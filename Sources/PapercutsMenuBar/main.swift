@@ -726,22 +726,6 @@ struct PapercutRow: View {
                     detail("What happened", cut.description)
                     detail("Why it matters", cut.whyItMatters)
 
-                    VStack(alignment: .leading, spacing: 7) {
-                        Text("SUGGESTED PROMPT")
-                            .font(.system(size: 10, weight: .semibold))
-                            .tracking(0.7)
-                            .foregroundStyle(PapercutTheme.secondary)
-                        Text(cut.prompt)
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(PapercutTheme.primary.opacity(0.9))
-                            .textSelection(.enabled)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .padding(12)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(PapercutTheme.background, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(PapercutTheme.border, lineWidth: 1))
-                    }
-
                     HStack(spacing: 8) {
                         Button {
                             onCopy()

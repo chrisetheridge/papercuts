@@ -41,7 +41,8 @@ private func runGit(_ arguments: [String]) throws {
     #expect(try store.all().first?.title == "Edited")
     #expect(newer.formattedPrompt.contains("Context:\nd"))
     #expect(newer.formattedPrompt.contains("Why it matters:\nw"))
-    #expect(newer.formattedPrompt.contains("How to fix it:\np"))
+    #expect(newer.formattedPrompt.contains("Investigation and fix guidance:\np"))
+    #expect(newer.formattedPrompt.contains("Do not modify files or implement a fix yet."))
     try store.delete(id: newer.id)
     #expect(try store.all().map(\.title) == ["Older"])
 }
